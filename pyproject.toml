@@ -29,8 +29,8 @@ classifiers = [
         'Topic :: Software Development :: Libraries :: Python Modules',
 ]
 dependencies = [
-        'torch',
-        'torchvision',
+#        'torch',
+#        'torchvision',
         'pyyaml',
         'huggingface_hub',
         'safetensors',

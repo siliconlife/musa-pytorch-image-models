@@ -25,6 +25,13 @@ from timm.optim import create_optimizer_v2
 from timm.utils import setup_default_logging, set_jit_fuser, decay_batch_step, check_batch_size_retry, ParseKwargs,\
     reparameterize_model
 
+has_musa = False
+try:
+    import torch_musa
+    has_musa = torch.musa.is_available()
+except ImportError:
+    pass
+
 has_apex = False
 try:
     from apex import amp
@@ -53,6 +60,9 @@ except ImportError as e:
 
 has_compile = hasattr(torch, 'compile')
 
+# if has_musa:
+#     torch.backends.musa.matmul.allow_tf32 = True
+#     torch.backends.mudnn.benchmark = True
 if torch.cuda.is_available():
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.benchmark = True
@@ -161,7 +171,10 @@ def cuda_timestamp(sync=False, device=None):
     if sync:
         torch.cuda.synchronize(device=device)
     return time.perf_counter()
-
+def musa_timestamp(sync=False, device=None):
+    if sync:
+        torch.musa.synchronize(device=device)
+    return time.perf_counter()
 
 def count_params(model: nn.Module):
     return sum([m.numel() for m in model.parameters()])
@@ -285,7 +298,9 @@ class BenchmarkRunner:
         self.num_warm_iter = num_warm_iter
         self.num_bench_iter = num_bench_iter
         self.log_freq = num_bench_iter // 5
-        if 'cuda' in self.device:
+        if 'musa' in self.device:
+            self.time_fn = partial(musa_timestamp, device=self.device)
+        elif 'cuda' in self.device:
             self.time_fn = partial(cuda_timestamp, device=self.device)
         else:
             self.time_fn = timestamp
@@ -550,7 +565,10 @@ def _try_run(
     error_str = 'Unknown'
     while batch_size:
         try:
-            torch.cuda.empty_cache()
+            if has_musa:
+                torch.musa.empty_cache()
+            else:
+                torch.cuda.empty_cache()
             bench = bench_fn(model_name=model_name, batch_size=batch_size, **bench_kwargs)
             results = bench.run()
             return results
